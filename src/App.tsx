@@ -1,9 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useEgolockStore, selectEgoistScore } from './store/useEgolockStore'
 import LevelUpToast from './components/LevelUpToast'
+import DossierScreen from './screens/DossierScreen'
 import SkillsScreen from './screens/SkillsScreen'
 import LoggerScreen from './screens/LoggerScreen'
 import FocusScreen from './screens/FocusScreen'
+import StoreScreen from './screens/StoreScreen'
+import PlanScreen from './screens/PlanScreen'
+import ArchiveScreen from './screens/ArchiveScreen'
 
 // ─── Tab config ───────────────────────────────────────────────────────────────
 
@@ -72,9 +76,13 @@ export default function App() {
 
   function renderTab() {
     switch (activeTab) {
+      case 'Dossier': return <DossierScreen />
       case 'Skills':  return <SkillsScreen />
       case 'Logger':  return <LoggerScreen />
       case 'Focus':   return <FocusScreen />
+      case 'Store':   return <StoreScreen />
+      case 'Plan':    return <PlanScreen />
+      case 'Archive': return <ArchiveScreen />
       default:        return <Placeholder name={activeTab} />
     }
   }
