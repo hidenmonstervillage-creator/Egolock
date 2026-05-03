@@ -7,6 +7,7 @@ import Panel from '../components/ui/Panel'
 import Button from '../components/ui/Button'
 import EgoQuadrantGraphic from '../components/EgoQuadrantGraphic'
 import EgoTestModal from '../components/EgoTestModal'
+import AvatarUploader from '../components/AvatarUploader'
 
 // ─── Momentum colours (mirrored from App.tsx) ─────────────────────────────────
 
@@ -62,6 +63,9 @@ export default function DossierScreen() {
 
   return (
     <div className="flex flex-col gap-4 max-w-2xl">
+
+      {/* ── 0: IDENTITY IMAGE ─────────────────────────────────────────────── */}
+      <AvatarUploader />
 
       {/* ── A: IDENTITY ───────────────────────────────────────────────────── */}
       <Panel title="IDENTITY">

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useEgolockStore, selectEgoistScore } from './store/useEgolockStore'
 import LevelUpToast from './components/LevelUpToast'
+import Avatar from './components/Avatar'
 import DossierScreen from './screens/DossierScreen'
 import SkillsScreen from './screens/SkillsScreen'
 import LoggerScreen from './screens/LoggerScreen'
@@ -93,10 +94,13 @@ export default function App() {
       {/* ── Top bar ─────────────────────────────────────────────────────── */}
       <header className="sticky top-0 z-50 bg-bg border-b border-line flex items-center justify-between px-4 h-14">
 
-        {/* Left — wordmark */}
-        <div className="flex items-center gap-2">
-          <span className="text-neon font-bold tracking-widest text-sm">EGOLOCK</span>
-          <span className="w-2 h-2 bg-red animate-pulse inline-block" />
+        {/* Left — avatar + wordmark */}
+        <div className="flex items-center gap-3">
+          <Avatar size={28} />
+          <div className="flex items-center gap-2">
+            <span className="text-neon font-bold tracking-widest text-sm">EGOLOCK</span>
+            <span className="w-2 h-2 bg-red animate-pulse inline-block" />
+          </div>
         </div>
 
         {/* Center — Eₑ score + Mc badge */}

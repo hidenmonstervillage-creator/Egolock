@@ -19,6 +19,7 @@ export interface Profile {
   egoArchetype: EgoArchetype | null
   egoTestCompletedAt: number | null       // epoch ms; null = never tested
   egoTestUnlockedManualEdit: boolean      // true after 14 days post-test
+  avatarDataUrl: string | null            // base64 JPEG data URL, client-compressed
   irlGoals: string[]
 }
 
@@ -112,6 +113,9 @@ interface EgolockState {
   setEgoPosition: (x: number, y: number) => void
   checkEgoEditUnlock: () => void
   resetEgoTest: () => void
+  // ── Avatar actions ────────────────────────────────────────────────────────
+  setAvatar: (dataUrl: string) => void
+  clearAvatar: () => void
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -151,6 +155,7 @@ export const useEgolockStore = create<EgolockState>()(
         egoArchetype: null,
         egoTestCompletedAt: null,
         egoTestUnlockedManualEdit: false,
+        avatarDataUrl: null,
         irlGoals: [],
       },
       skillPoints: initSkillPoints(),
@@ -373,23 +378,39 @@ export const useEgolockStore = create<EgolockState>()(
           },
         }))
       },
+
+      // ── Avatar ─────────────────────────────────────────────────────────────
+      setAvatar(dataUrl) {
+        set(state => ({ profile: { ...state.profile, avatarDataUrl: dataUrl } }))
+      },
+
+      clearAvatar() {
+        set(state => ({ profile: { ...state.profile, avatarDataUrl: null } }))
+      },
     }),
     {
       name: 'egolock-v1',
-      version: 2,
+      version: 3,
       migrate(persistedState: unknown, version: number) {
-        // version < 2: ego test fields were not yet in the schema.
-        // Patch the profile in-place WITHOUT touching any other top-level keys.
         const s = persistedState as Record<string, unknown>
+
+        // v1 → v2: ego test fields added to profile
         if (version < 2) {
           const p = (s.profile ?? {}) as Record<string, unknown>
           s.profile = {
             ...p,
-            egoArchetype:            p.egoArchetype            ?? null,
-            egoTestCompletedAt:      p.egoTestCompletedAt      ?? null,
+            egoArchetype:              p.egoArchetype              ?? null,
+            egoTestCompletedAt:        p.egoTestCompletedAt        ?? null,
             egoTestUnlockedManualEdit: p.egoTestUnlockedManualEdit ?? false,
           }
         }
+
+        // v2 → v3: avatar field added to profile
+        if (version < 3) {
+          const p = (s.profile ?? {}) as Record<string, unknown>
+          s.profile = { ...p, avatarDataUrl: p.avatarDataUrl ?? null }
+        }
+
         return s
       },
       partialize: (state) => ({
