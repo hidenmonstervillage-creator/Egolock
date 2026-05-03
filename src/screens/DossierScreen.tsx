@@ -2,8 +2,11 @@ import { useState } from 'react'
 import { useEgolockStore, selectEgoistScore } from '../store/useEgolockStore'
 import { SKILLS } from '../lib/skills'
 import { computeLevel } from '../lib/leveling'
+import { EGO_QUADRANT_INFO, EGO_ARCHETYPE_INFO, getQuadrantKey } from '../lib/egoTest'
 import Panel from '../components/ui/Panel'
 import Button from '../components/ui/Button'
+import EgoQuadrantGraphic from '../components/EgoQuadrantGraphic'
+import EgoTestModal from '../components/EgoTestModal'
 
 // ─── Momentum colours (mirrored from App.tsx) ─────────────────────────────────
 
@@ -20,91 +23,6 @@ const MC_LABEL: Record<string, string> = {
   elimination: 'ELIMINATION 0.50×',
 }
 
-// ─── EgoType SVG quadrant ─────────────────────────────────────────────────────
-
-const QW = 280 // quadrant width/height in viewBox units
-
-function EgoTypeQuadrant() {
-  const egoType     = useEgolockStore(s => s.profile.egoType)
-  const updateProfile = useEgolockStore(s => s.updateProfile)
-
-  const handleClick = (e: React.MouseEvent<SVGSVGElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect()
-    const cx   = e.clientX - rect.left
-    const cy   = e.clientY - rect.top
-    // Map pixel position to [-1, 1] × [-1, 1]; Y is flipped (SVG top = positive y)
-    const x = Math.max(-1, Math.min(1,  (cx / rect.width)  * 2 - 1))
-    const y = Math.max(-1, Math.min(1, -((cy / rect.height) * 2 - 1)))
-    updateProfile({ egoType: { x, y } })
-  }
-
-  // Convert stored [-1,1] coords to SVG pixel coords inside the viewBox
-  const dotX = egoType != null ? ((egoType.x  + 1) / 2) * QW : null
-  const dotY = egoType != null ? ((1 - egoType.y) / 2) * QW : null
-
-  return (
-    <div className="flex flex-col items-center gap-2 select-none">
-      {/* Y-axis top label */}
-      <span className="label text-dim">COLLECTIVIST</span>
-
-      <div className="flex items-center gap-2">
-        {/* X-axis left label */}
-        <span className="label text-dim writing-mode-vertical" style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>
-          PASSIVE
-        </span>
-
-        {/* SVG */}
-        <svg
-          viewBox={`0 0 ${QW} ${QW}`}
-          width={QW}
-          height={QW}
-          className="cursor-crosshair border border-line bg-bg shrink-0"
-          onClick={handleClick}
-          style={{ maxWidth: '100%' }}
-        >
-          {/* Grid lines */}
-          <line x1={QW / 2} y1={0} x2={QW / 2} y2={QW} stroke="#1F1F1F" strokeWidth={1} />
-          <line x1={0} y1={QW / 2} x2={QW} y2={QW / 2} stroke="#1F1F1F" strokeWidth={1} />
-
-          {/* Axis arrows */}
-          <line x1={8} y1={QW / 2} x2={QW - 8} y2={QW / 2} stroke="#3A3A3A" strokeWidth={1} />
-          <line x1={QW / 2} y1={8} x2={QW / 2} y2={QW - 8} stroke="#3A3A3A" strokeWidth={1} />
-
-          {/* Dot */}
-          {dotX != null && dotY != null && (
-            <>
-              {/* Crosshair lines through dot */}
-              <line x1={dotX} y1={0} x2={dotX} y2={QW} stroke="#00E5FF" strokeWidth={0.5} strokeOpacity={0.3} />
-              <line x1={0} y1={dotY} x2={QW} y2={dotY} stroke="#00E5FF" strokeWidth={0.5} strokeOpacity={0.3} />
-              {/* Dot */}
-              <circle cx={dotX} cy={dotY} r={6} fill="#00E5FF" />
-              <circle cx={dotX} cy={dotY} r={3} fill="#000" />
-            </>
-          )}
-        </svg>
-
-        {/* X-axis right label */}
-        <span className="label text-dim" style={{ writingMode: 'vertical-rl' }}>
-          AGGRESSIVE
-        </span>
-      </div>
-
-      {/* Y-axis bottom label */}
-      <span className="label text-dim">INDIVIDUALIST</span>
-
-      {/* Saved coordinates */}
-      {egoType && (
-        <span className="label text-dim text-[10px]">
-          x {egoType.x.toFixed(2)} · y {egoType.y.toFixed(2)}
-        </span>
-      )}
-      {!egoType && (
-        <span className="label text-dim text-[10px]">click to place your ego</span>
-      )}
-    </div>
-  )
-}
-
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
 export default function DossierScreen() {
@@ -114,11 +32,14 @@ export default function DossierScreen() {
   const capital       = useEgolockStore(s => s.capital)
   const eScore        = useEgolockStore(selectEgoistScore)
   const updateProfile = useEgolockStore(s => s.updateProfile)
+  const setEgoPosition = useEgolockStore(s => s.setEgoPosition)
+  const resetEgoTest   = useEgolockStore(s => s.resetEgoTest)
 
   // Local input state — synced to store on blur
-  const [usernameLocal, setUsernameLocal]       = useState(profile.username)
+  const [usernameLocal, setUsernameLocal]         = useState(profile.username)
   const [egoStatementLocal, setEgoStatementLocal] = useState(profile.egoStatement)
-  const [newGoal, setNewGoal]                   = useState('')
+  const [newGoal, setNewGoal]                     = useState('')
+  const [testOpen, setTestOpen]                   = useState(false)
 
   const skillsAboveLvZero = SKILLS.filter(s =>
     computeLevel(s.rarity, skillPoints[s.id] ?? 0) > 0,
@@ -189,13 +110,114 @@ export default function DossierScreen() {
         />
       </Panel>
 
-      {/* ── C: EGO TYPE QUADRANT ──────────────────────────────────────────── */}
-      <Panel title="// EGO TYPE">
-        <p className="text-dim text-xs mb-4 leading-relaxed">
-          Plot yourself on the axes. Position is yours alone — no scoring, no judgment.
-        </p>
-        <EgoTypeQuadrant />
-      </Panel>
+      {/* ── C: EGO TYPE ───────────────────────────────────────────────────── */}
+      {!profile.egoTestCompletedAt ? (
+
+        /* ── CASE A: not yet tested ─────────────────────────────────────── */
+        <Panel title="// EGO TYPE — UNSCANNED">
+          <p className="text-dim text-xs leading-relaxed mb-4">
+            The Egolock cannot place you yet. Take the placement profile.
+            15 questions. Answer honestly. There is no going back.
+          </p>
+          <Button
+            variant="primary"
+            size="md"
+            onClick={() => setTestOpen(true)}
+            className="w-full justify-center"
+          >
+            BEGIN PLACEMENT TEST
+          </Button>
+        </Panel>
+
+      ) : (
+
+        /* ── CASE B: tested ─────────────────────────────────────────────── */
+        (() => {
+          const pos           = profile.egoType
+          const quadKey       = pos ? getQuadrantKey(pos) : null
+          const quadInfo      = quadKey ? EGO_QUADRANT_INFO[quadKey] : null
+          const archetypeInfo = profile.egoArchetype ? EGO_ARCHETYPE_INFO[profile.egoArchetype] : null
+          const daysRemaining = profile.egoTestCompletedAt
+            ? Math.max(0, 14 - Math.floor((Date.now() - profile.egoTestCompletedAt) / 86_400_000))
+            : 0
+
+          return (
+            <Panel title="// EGO TYPE">
+
+              {/* Quadrant graphic */}
+              <EgoQuadrantGraphic
+                position={pos ?? null}
+                interactive={profile.egoTestUnlockedManualEdit}
+                onChange={({ x, y }) => setEgoPosition(x, y)}
+                pulseDot={false}
+              />
+
+              {/* Quadrant name + archetype + description */}
+              {quadInfo && (
+                <div className="flex flex-col gap-3 mt-4">
+                  <span className="text-neon text-2xl font-bold font-mono tracking-widest leading-tight">
+                    {quadInfo.name}
+                  </span>
+
+                  {archetypeInfo && (
+                    <div className="flex items-center gap-2">
+                      <span className="label text-dim text-[10px]">ARCHETYPE</span>
+                      <span className="label text-red font-bold text-[11px] tracking-widest">
+                        {archetypeInfo.name}
+                      </span>
+                    </div>
+                  )}
+
+                  <p className="text-ink text-xs leading-relaxed font-mono">
+                    {quadInfo.description}
+                  </p>
+                </div>
+              )}
+
+              {/* Lock / unlock status strip */}
+              <div className="mt-4 flex flex-col gap-0.5">
+                {!profile.egoTestUnlockedManualEdit ? (
+                  <>
+                    <span className="label text-dim text-[10px]">
+                      // PLACEMENT LOCKED — {daysRemaining} DAY{daysRemaining !== 1 ? 'S' : ''} UNTIL YOU CAN MOVE YOURSELF.
+                    </span>
+                    <span className="label text-dim text-[10px] opacity-60">
+                      earn the right to choose. the egolock decides for now.
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span className="label text-neon text-[10px]">
+                      // MANUAL CALIBRATION UNLOCKED
+                    </span>
+                    <span className="label text-dim text-[10px] opacity-60">
+                      click anywhere in the quadrant to reposition.
+                    </span>
+                  </>
+                )}
+              </div>
+
+              {/* Retake button */}
+              <div className="mt-4">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    if (window.confirm('This will erase your placement and unlock a new test. Continue?')) {
+                      resetEgoTest()
+                      setTestOpen(true)
+                    }
+                  }}
+                >
+                  RETAKE TEST
+                </Button>
+              </div>
+
+            </Panel>
+          )
+        })()
+
+      )}
 
       {/* ── D: IRL GOALS ──────────────────────────────────────────────────── */}
       <Panel title="// IRL TARGETS">
@@ -242,6 +264,9 @@ export default function DossierScreen() {
           </div>
         )}
       </Panel>
+
+      {/* Ego placement test modal */}
+      <EgoTestModal open={testOpen} onClose={() => setTestOpen(false)} />
 
     </div>
   )

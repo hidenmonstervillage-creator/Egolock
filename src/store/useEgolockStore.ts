@@ -10,10 +10,15 @@ import {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+export type EgoArchetype = 'genius' | 'talented-learner'
+
 export interface Profile {
   username: string
   egoStatement: string
   egoType: { x: number; y: number } | null
+  egoArchetype: EgoArchetype | null
+  egoTestCompletedAt: number | null       // epoch ms; null = never tested
+  egoTestUnlockedManualEdit: boolean      // true after 14 days post-test
   irlGoals: string[]
 }
 
@@ -102,6 +107,11 @@ interface EgolockState {
   updateProfile: (partial: Partial<Profile>) => void
   recomputeMomentum: (now?: Date) => void
   rolloverIfNewDay: () => void
+  // ── Ego test actions ──────────────────────────────────────────────────────
+  completeEgoTest: (params: { x: number; y: number; archetype: EgoArchetype }) => void
+  setEgoPosition: (x: number, y: number) => void
+  checkEgoEditUnlock: () => void
+  resetEgoTest: () => void
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -138,6 +148,9 @@ export const useEgolockStore = create<EgolockState>()(
         username: '',
         egoStatement: '',
         egoType: null,
+        egoArchetype: null,
+        egoTestCompletedAt: null,
+        egoTestUnlockedManualEdit: false,
         irlGoals: [],
       },
       skillPoints: initSkillPoints(),
@@ -314,11 +327,71 @@ export const useEgolockStore = create<EgolockState>()(
         // The failure tax fires at that point, not here.
         set({ lastSeenDate: today })
         get().recomputeMomentum()
+        get().checkEgoEditUnlock()
+      },
+
+      // ── Ego test ───────────────────────────────────────────────────────────
+      completeEgoTest({ x, y, archetype }) {
+        set(state => ({
+          profile: {
+            ...state.profile,
+            egoType: { x, y },
+            egoArchetype: archetype,
+            egoTestCompletedAt: Date.now(),
+            egoTestUnlockedManualEdit: false,
+          },
+        }))
+      },
+
+      setEgoPosition(x, y) {
+        // Silently no-ops while the 14-day lock is active
+        if (!get().profile.egoTestUnlockedManualEdit) return
+        set(state => ({
+          profile: { ...state.profile, egoType: { x, y } },
+        }))
+      },
+
+      checkEgoEditUnlock() {
+        const { egoTestCompletedAt, egoTestUnlockedManualEdit } = get().profile
+        if (!egoTestCompletedAt || egoTestUnlockedManualEdit) return
+        const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000
+        if (Date.now() - egoTestCompletedAt >= FOURTEEN_DAYS_MS) {
+          set(state => ({
+            profile: { ...state.profile, egoTestUnlockedManualEdit: true },
+          }))
+        }
+      },
+
+      resetEgoTest() {
+        set(state => ({
+          profile: {
+            ...state.profile,
+            egoType: null,
+            egoArchetype: null,
+            egoTestCompletedAt: null,
+            egoTestUnlockedManualEdit: false,
+          },
+        }))
       },
     }),
     {
       name: 'egolock-v1',
-      version: 1,
+      version: 2,
+      migrate(persistedState: unknown, version: number) {
+        // version < 2: ego test fields were not yet in the schema.
+        // Patch the profile in-place WITHOUT touching any other top-level keys.
+        const s = persistedState as Record<string, unknown>
+        if (version < 2) {
+          const p = (s.profile ?? {}) as Record<string, unknown>
+          s.profile = {
+            ...p,
+            egoArchetype:            p.egoArchetype            ?? null,
+            egoTestCompletedAt:      p.egoTestCompletedAt      ?? null,
+            egoTestUnlockedManualEdit: p.egoTestUnlockedManualEdit ?? false,
+          }
+        }
+        return s
+      },
       partialize: (state) => ({
         profile:          state.profile,
         skillPoints:      state.skillPoints,
