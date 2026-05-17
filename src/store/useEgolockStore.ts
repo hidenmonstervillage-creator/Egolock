@@ -425,7 +425,7 @@ export const useEgolockStore = create<EgolockState>()(
     }),
     {
       name: 'egolock-v1',
-      version: 4,
+      version: 5,
       migrate(persistedState: unknown, version: number) {
         const s = persistedState as Record<string, unknown>
 
@@ -478,6 +478,22 @@ export const useEgolockStore = create<EgolockState>()(
           s.sportSkillName    = 'Combat Sport'
           // Existing users: mark prompted so the naming dialog never shows
           s.sportNamePrompted = true
+        }
+
+        // v4 → v5: defensive kickboxing → sport hotfix
+        // The v4 migration already handles this. This block re-runs it safely
+        // for any device where the v4 transfer may not have taken effect
+        // (e.g. if the persist version was somehow already at 4 via a different
+        // path). For devices where v4 ran correctly, sp['kickboxing'] will be
+        // undefined → kbPtsHf = 0 → if-block skipped → delete is a no-op. Safe.
+        if (version < 5) {
+          const sp     = ((s.skillPoints ?? {}) as Record<string, number>)
+          const kbPtsHf = sp['kickboxing'] ?? 0
+          if (kbPtsHf > 0) {
+            sp['sport'] = (sp['sport'] ?? 0) + kbPtsHf
+          }
+          delete sp['kickboxing']
+          s.skillPoints = sp
         }
 
         return s

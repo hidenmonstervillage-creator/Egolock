@@ -61,11 +61,13 @@ export default function App() {
 
   const sessionLocked = focusSession?.status === 'running'
 
-  // ── URL-based premium unlock / lock — case-sensitive ──────────────────────
+  // ── URL-based premium unlock / lock ───────────────────────────────────────
+  // CASE-SENSITIVE: === enforces exact match. 'UNLEASHED' / 'Unleashed' do NOT
+  // match. Only the exact lowercase strings 'unleashed' and 'locked' trigger.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
-    const ego    = params.get('ego')   // exact case match
-    if (ego === 'unleashed') {
+    const ego    = params.get('ego')   // returns raw value verbatim — no normalization
+    if (ego === 'unleashed') {         // strict equality: case-sensitive by spec
       setPremium(true)
       params.delete('ego')
       window.history.replaceState(
