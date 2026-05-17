@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useEgolockStore, selectEgoistScore } from './store/useEgolockStore'
 import LevelUpToast from './components/LevelUpToast'
 import Avatar from './components/Avatar'
+import SportNameDialog from './components/SportNameDialog'
 import DossierScreen from './screens/DossierScreen'
 import SkillsScreen from './screens/SkillsScreen'
 import LoggerScreen from './screens/LoggerScreen'
@@ -47,17 +48,54 @@ function Placeholder({ name }: { name: string }) {
 // ─── App ──────────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<Tab>('Dossier')
+  const [activeTab, setActiveTab]         = useState<Tab>('Dossier')
+  const [sportDialogOpen, setSportDialogOpen] = useState(false)
 
-  const momentum     = useEgolockStore(s => s.momentum)
-  const capital      = useEgolockStore(s => s.capital)
-  const eScore       = useEgolockStore(selectEgoistScore)
-  const focusSession = useEgolockStore(s => s.focusSession)
+  const momentum          = useEgolockStore(s => s.momentum)
+  const capital           = useEgolockStore(s => s.capital)
+  const eScore            = useEgolockStore(selectEgoistScore)
+  const focusSession      = useEgolockStore(s => s.focusSession)
+  const setPremium        = useEgolockStore(s => s.setPremium)
+  const sportNamePrompted = useEgolockStore(s => s.sportNamePrompted)
+  const actionLog         = useEgolockStore(s => s.actionLog)
 
-  // True while the anti-cheat timer is live — locks in-app navigation
   const sessionLocked = focusSession?.status === 'running'
 
-  // Rollover on mount + 60s interval
+  // ── URL-based premium unlock / lock — case-sensitive ──────────────────────
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const ego    = params.get('ego')   // exact case match
+    if (ego === 'unleashed') {
+      setPremium(true)
+      params.delete('ego')
+      window.history.replaceState(
+        {},
+        '',
+        params.toString() ? `?${params}` : window.location.pathname,
+      )
+    } else if (ego === 'locked') {
+      setPremium(false)
+      params.delete('ego')
+      window.history.replaceState(
+        {},
+        '',
+        params.toString() ? `?${params}` : window.location.pathname,
+      )
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // mount only
+
+  // ── Sport naming dialog — new users only ───────────────────────────────────
+  // Only shows if the user has never been prompted AND has no action history
+  // (i.e. genuinely brand-new, not a migrated user).
+  useEffect(() => {
+    if (!sportNamePrompted && actionLog.length === 0) {
+      setSportDialogOpen(true)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // mount only
+
+  // ── Day rollover ───────────────────────────────────────────────────────────
   useEffect(() => {
     useEgolockStore.getState().rolloverIfNewDay()
     const id = setInterval(() => {
@@ -66,11 +104,11 @@ export default function App() {
     return () => clearInterval(id)
   }, [])
 
-  // If there's an active/unresolved focus session on boot, jump to Focus tab
+  // ── Jump to Focus tab if session was active on boot ────────────────────────
   useEffect(() => {
     if (focusSession !== null) setActiveTab('Focus')
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []) // only on mount — don't re-run on every session change
+  }, []) // mount only — don't re-run on every session change
 
   const momentumStyle = MOMENTUM_STYLES[momentum] ?? MOMENTUM_STYLES.consistent
   const momentumText  = MOMENTUM_LABEL[momentum]  ?? momentum.toUpperCase()
@@ -161,8 +199,12 @@ export default function App() {
         {renderTab()}
       </main>
 
-      {/* ── Level-up toast — global, outside tab switch ──────────────────── */}
+      {/* ── Global overlays ─────────────────────────────────────────────── */}
       <LevelUpToast />
+      <SportNameDialog
+        open={sportDialogOpen}
+        onClose={() => setSportDialogOpen(false)}
+      />
 
     </div>
   )

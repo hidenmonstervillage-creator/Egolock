@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useEgolockStore } from '../store/useEgolockStore'
-import { SKILLS, getSkill } from '../lib/skills'
+import { BRANCHES, getAllSkillDefs, getSkillDef } from '../lib/skills'
 import Panel from '../components/ui/Panel'
 import Button from '../components/ui/Button'
 import EvolutionPrompt from '../components/EvolutionPrompt'
@@ -10,8 +10,8 @@ import EvolutionPrompt from '../components/EvolutionPrompt'
 const DURATION_PRESETS = [5, 10, 15, 25, 45, 60, 90] // minutes
 
 function formatMmSs(totalSeconds: number): string {
-  const s = Math.max(0, totalSeconds)
-  const m = Math.floor(s / 60)
+  const s   = Math.max(0, totalSeconds)
+  const m   = Math.floor(s / 60)
   const sec = s % 60
   return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
 }
@@ -20,10 +20,14 @@ function formatMmSs(totalSeconds: number): string {
 
 function FocusPicker() {
   const startFocusSession = useEgolockStore(s => s.startFocusSession)
+  const customSkills      = useEgolockStore(s => s.customSkills)
+  const sportSkillName    = useEgolockStore(s => s.sportSkillName)
 
-  const [selectedSkill,   setSelectedSkill]   = useState('focus')
-  const [presetMin,       setPresetMin]        = useState<number | null>(25)
-  const [customMin,       setCustomMin]        = useState('')
+  const allSkills = getAllSkillDefs(customSkills)
+
+  const [selectedSkill, setSelectedSkill] = useState('focus')
+  const [presetMin,     setPresetMin]     = useState<number | null>(25)
+  const [customMin,     setCustomMin]     = useState('')
 
   // Resolved duration: custom overrides preset
   const durationMin =
@@ -33,7 +37,7 @@ function FocusPicker() {
 
   const handleCustomChange = (v: string) => {
     setCustomMin(v)
-    if (v !== '') setPresetMin(null) // deselect preset when typing custom
+    if (v !== '') setPresetMin(null)
   }
 
   const handlePreset = (min: number) => {
@@ -55,18 +59,29 @@ function FocusPicker() {
         </p>
       </Panel>
 
-      {/* Skill selector */}
+      {/* Skill selector — grouped by branch */}
       <Panel title="SKILL">
         <select
           value={selectedSkill}
           onChange={e => setSelectedSkill(e.target.value)}
           className="w-full bg-bg border border-line text-ink font-mono text-xs px-3 py-2 focus:border-neon outline-none"
         >
-          {SKILLS.map(s => (
-            <option key={s.id} value={s.id}>
-              {s.name} ({s.rarity})
-            </option>
-          ))}
+          {BRANCHES.map(branch => {
+            const branchSkills = allSkills.filter(s => s.branchId === branch.id)
+            if (branchSkills.length === 0) return null
+            return (
+              <optgroup key={branch.id} label={branch.name}>
+                {branchSkills.map(s => {
+                  const displayName = s.isCustomNameable ? sportSkillName : s.name
+                  return (
+                    <option key={s.id} value={s.id}>
+                      {displayName} ({s.rarity})
+                    </option>
+                  )
+                })}
+              </optgroup>
+            )
+          })}
         </select>
       </Panel>
 
@@ -122,8 +137,13 @@ function FocusPicker() {
 function FocusRunning() {
   const focusSession     = useEgolockStore(s => s.focusSession)!
   const failFocusSession = useEgolockStore(s => s.failFocusSession)
+  const customSkills     = useEgolockStore(s => s.customSkills)
+  const sportSkillName   = useEgolockStore(s => s.sportSkillName)
 
-  const skill = getSkill(focusSession.skillId)
+  const skillDef    = getSkillDef(focusSession.skillId, customSkills)
+  const displayName = skillDef?.isCustomNameable
+    ? sportSkillName
+    : (skillDef?.name ?? focusSession.skillId)
 
   // ── Local countdown (updates every 250 ms) ─────────────────────────────────
   const [remaining, setRemaining] = useState<number>(() => {
@@ -132,42 +152,30 @@ function FocusRunning() {
   })
 
   useEffect(() => {
-    // Called every 250 ms AND immediately on mount.
-    // If the page was closed and reopened after the timer would have expired,
-    // the first tick detects remaining === 0 and completes cleanly.
-    // If it was reopened before expiry, the countdown resumes from the correct
-    // remaining time — refreshing is NOT treated as cheating.
     const tick = () => {
       const s = useEgolockStore.getState().focusSession
       if (!s || s.status !== 'running') return
-      const elapsed  = Math.floor((Date.now() - s.startedAt) / 1000)
-      const left     = Math.max(0, s.durationSec - elapsed)
+      const elapsed = Math.floor((Date.now() - s.startedAt) / 1000)
+      const left    = Math.max(0, s.durationSec - elapsed)
       setRemaining(left)
       if (left <= 0) {
         useEgolockStore.getState().completeFocusSession()
       }
     }
 
-    tick() // immediate check handles post-refresh expiry
+    tick()
     const id = setInterval(tick, 250)
     return () => clearInterval(id)
-  }, []) // no deps — reads store directly via getState() to avoid stale closures
+  }, [])
 
   // ── Anti-cheat listeners ───────────────────────────────────────────────────
   useEffect(() => {
-    // PRIMARY: visibilitychange fires when the user switches browser tabs,
-    // minimizes the window, or the OS hides the page.
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
         useEgolockStore.getState().failFocusSession()
       }
     }
 
-    // BACKUP: window blur fires when the user alt-tabs to another native app.
-    // Some Chromium builds don't fire visibilitychange on alt-tab in certain
-    // desktop configurations — this catches those cases.
-    // document.hasFocus() confirms true window-level focus loss (not an
-    // in-page focus shift like clicking a button or select).
     const handleBlur = () => {
       if (!document.hasFocus()) {
         useEgolockStore.getState().failFocusSession()
@@ -181,7 +189,6 @@ function FocusRunning() {
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       window.removeEventListener('blur', handleBlur)
     }
-    // Effect re-runs (and cleanup fires) whenever status leaves 'running'
   }, [])
 
   const elapsed    = focusSession.durationSec - remaining
@@ -193,7 +200,7 @@ function FocusRunning() {
     <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6 select-none">
       {/* Locked-on label */}
       <div className="label text-dim tracking-widest">
-        // LOCKED ON {skill?.name.toUpperCase() ?? focusSession.skillId.toUpperCase()}
+        // LOCKED ON {displayName.toUpperCase()}
       </div>
 
       {/* Countdown */}
@@ -201,7 +208,7 @@ function FocusRunning() {
         {formatMmSs(remaining)}
       </div>
 
-      {/* Progress bar — no transition, updates every 250 ms */}
+      {/* Progress bar */}
       <div className="w-full max-w-sm h-[2px] bg-line">
         <div
           className="h-full bg-neon"
@@ -215,7 +222,7 @@ function FocusRunning() {
         THE TIMER IS WATCHING.
       </p>
 
-      {/* Abandon — treat same as a cheat: triggers evolution prompt */}
+      {/* Abandon */}
       <Button
         variant="danger"
         size="sm"
@@ -227,20 +234,24 @@ function FocusRunning() {
   )
 }
 
-// ─── Failed — evo prompt + failure panel behind it ────────────────────────────
+// ─── Failed ───────────────────────────────────────────────────────────────────
 
 function FocusFailed() {
-  const focusSession    = useEgolockStore(s => s.focusSession)!
+  const focusSession      = useEgolockStore(s => s.focusSession)!
   const clearFocusSession = useEgolockStore(s => s.clearFocusSession)
+  const customSkills      = useEgolockStore(s => s.customSkills)
+  const sportSkillName    = useEgolockStore(s => s.sportSkillName)
 
-  const skill = getSkill(focusSession.skillId)
+  const skillDef    = getSkillDef(focusSession.skillId, customSkills)
+  const displayName = skillDef?.isCustomNameable
+    ? sportSkillName
+    : (skillDef?.name ?? focusSession.skillId)
 
   const elapsedSec = focusSession.failedAt
     ? Math.floor((focusSession.failedAt - focusSession.startedAt) / 1000)
     : 0
   const elapsedMin = Math.floor(elapsedSec / 60)
 
-  // Auto-open evolution prompt; close clears session so screen returns to picker
   const [evoOpen, setEvoOpen] = useState(true)
 
   const handleEvoClose = () => {
@@ -250,11 +261,10 @@ function FocusFailed() {
 
   return (
     <>
-      {/* Behind the modal */}
       <Panel accent="red" title="// SESSION FAILED">
         <p className="text-ink text-sm mt-1">
           <span className="text-red font-bold uppercase tracking-wider">
-            {skill?.name ?? focusSession.skillId}
+            {displayName}
           </span>
           {' '}—{' '}
           <span className="text-dim">
@@ -275,13 +285,19 @@ function FocusFailed() {
   )
 }
 
-// ─── Completed — success state ─────────────────────────────────────────────────
+// ─── Completed ────────────────────────────────────────────────────────────────
 
 function FocusCompleted() {
-  const focusSession    = useEgolockStore(s => s.focusSession)!
+  const focusSession      = useEgolockStore(s => s.focusSession)!
   const clearFocusSession = useEgolockStore(s => s.clearFocusSession)
+  const customSkills      = useEgolockStore(s => s.customSkills)
+  const sportSkillName    = useEgolockStore(s => s.sportSkillName)
 
-  const skill   = getSkill(focusSession.skillId)
+  const skillDef    = getSkillDef(focusSession.skillId, customSkills)
+  const displayName = skillDef?.isCustomNameable
+    ? sportSkillName
+    : (skillDef?.name ?? focusSession.skillId)
+
   const minutes = Math.floor(focusSession.durationSec / 60)
 
   return (
@@ -290,7 +306,7 @@ function FocusCompleted() {
         <div className="flex flex-col gap-1 mt-1">
           <p className="text-ink text-sm">
             <span className="text-neon font-bold uppercase tracking-wider">
-              {skill?.name ?? focusSession.skillId}
+              {displayName}
             </span>
             {' '}—{' '}
             <span className="text-neon tabular-nums">
@@ -310,7 +326,7 @@ function FocusCompleted() {
   )
 }
 
-// ─── Root FocusScreen — routes between the four states ────────────────────────
+// ─── Root FocusScreen ─────────────────────────────────────────────────────────
 
 export default function FocusScreen() {
   const focusSession = useEgolockStore(s => s.focusSession)

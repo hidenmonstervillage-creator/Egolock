@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useEgolockStore, selectEgoistScore } from '../store/useEgolockStore'
-import { SKILLS } from '../lib/skills'
+import { getAllSkillDefs } from '../lib/skills'
 import { computeLevel } from '../lib/leveling'
 import { EGO_QUADRANT_INFO, EGO_ARCHETYPE_INFO, getQuadrantKey } from '../lib/egoTest'
 import Panel from '../components/ui/Panel'
@@ -8,6 +8,7 @@ import Button from '../components/ui/Button'
 import EgoQuadrantGraphic from '../components/EgoQuadrantGraphic'
 import EgoTestModal from '../components/EgoTestModal'
 import AvatarUploader from '../components/AvatarUploader'
+import SportNameDialog from '../components/SportNameDialog'
 
 // ─── Momentum colours (mirrored from App.tsx) ─────────────────────────────────
 
@@ -27,22 +28,26 @@ const MC_LABEL: Record<string, string> = {
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
 export default function DossierScreen() {
-  const profile       = useEgolockStore(s => s.profile)
-  const skillPoints   = useEgolockStore(s => s.skillPoints)
-  const momentum      = useEgolockStore(s => s.momentum)
-  const capital       = useEgolockStore(s => s.capital)
-  const eScore        = useEgolockStore(selectEgoistScore)
-  const updateProfile = useEgolockStore(s => s.updateProfile)
-  const setEgoPosition = useEgolockStore(s => s.setEgoPosition)
-  const resetEgoTest   = useEgolockStore(s => s.resetEgoTest)
+  const profile           = useEgolockStore(s => s.profile)
+  const skillPoints       = useEgolockStore(s => s.skillPoints)
+  const momentum          = useEgolockStore(s => s.momentum)
+  const capital           = useEgolockStore(s => s.capital)
+  const eScore            = useEgolockStore(selectEgoistScore)
+  const customSkills      = useEgolockStore(s => s.customSkills)
+  const sportSkillName    = useEgolockStore(s => s.sportSkillName)
+  const updateProfile     = useEgolockStore(s => s.updateProfile)
+  const setEgoPosition    = useEgolockStore(s => s.setEgoPosition)
+  const resetEgoTest      = useEgolockStore(s => s.resetEgoTest)
 
   // Local input state — synced to store on blur
   const [usernameLocal, setUsernameLocal]         = useState(profile.username)
   const [egoStatementLocal, setEgoStatementLocal] = useState(profile.egoStatement)
   const [newGoal, setNewGoal]                     = useState('')
   const [testOpen, setTestOpen]                   = useState(false)
+  const [sportDialogOpen, setSportDialogOpen]     = useState(false)
 
-  const skillsAboveLvZero = SKILLS.filter(s =>
+  const allDefs           = getAllSkillDefs(customSkills)
+  const skillsAboveLvZero = allDefs.filter(s =>
     computeLevel(s.rarity, skillPoints[s.id] ?? 0) > 0,
   ).length
 
@@ -96,8 +101,20 @@ export default function DossierScreen() {
               CAPITAL <span className="text-ink">${capital.toLocaleString()}</span>
             </span>
             <span className="label text-dim">
-              SKILLS &gt; LV0 <span className="text-ink">{skillsAboveLvZero} / {SKILLS.length}</span>
+              SKILLS &gt; LV0 <span className="text-ink">{skillsAboveLvZero} / {allDefs.length}</span>
             </span>
+          </div>
+
+          {/* Sport name row */}
+          <div className="flex items-center gap-2 mt-1">
+            <span className="label text-dim text-[10px]">// SPORT:</span>
+            <span className="label text-ink text-[10px]">{sportSkillName}</span>
+            <button
+              onClick={() => setSportDialogOpen(true)}
+              className="label text-dim hover:text-neon text-[10px] transition-colors px-1"
+            >
+              [EDIT]
+            </button>
           </div>
         </div>
       </Panel>
@@ -271,6 +288,9 @@ export default function DossierScreen() {
 
       {/* Ego placement test modal */}
       <EgoTestModal open={testOpen} onClose={() => setTestOpen(false)} />
+
+      {/* Sport name edit modal */}
+      <SportNameDialog open={sportDialogOpen} onClose={() => setSportDialogOpen(false)} />
 
     </div>
   )

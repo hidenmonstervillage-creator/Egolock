@@ -1,5 +1,5 @@
 import { useEgolockStore } from '../store/useEgolockStore'
-import { getSkill } from '../lib/skills'
+import { getSkillDef, getBranch } from '../lib/skills'
 import { computeLevel, pointsToNextLevel } from '../lib/leveling'
 import Panel from './ui/Panel'
 import RarityBadge from './ui/RarityBadge'
@@ -9,21 +9,29 @@ interface SkillCardProps {
 }
 
 export default function SkillCard({ skillId }: SkillCardProps) {
-  const skillPoints = useEgolockStore(s => s.skillPoints)
-  const skill = getSkill(skillId)
+  const skillPoints    = useEgolockStore(s => s.skillPoints)
+  const customSkills   = useEgolockStore(s => s.customSkills)
+  const sportSkillName = useEgolockStore(s => s.sportSkillName)
+
+  const skill = getSkillDef(skillId, customSkills)
   if (!skill) return null
 
-  const pts = skillPoints[skillId] ?? 0
-  const level = computeLevel(skill.rarity, pts)
-  const progress = pointsToNextLevel(skill.rarity, pts)
-  const isMaxed = level >= 15
+  const displayName = skill.isCustomNameable ? sportSkillName : skill.name
+  const branch      = getBranch(skill.branchId)
+  const pts         = skillPoints[skillId] ?? 0
+  const level       = computeLevel(skill.rarity, pts)
+  const progress    = pointsToNextLevel(skill.rarity, pts)
+  const isMaxed     = level >= 15
 
   return (
-    <Panel className="flex flex-col gap-2">
+    <Panel
+      className="flex flex-col gap-2"
+      style={{ borderLeftColor: branch.color }}
+    >
       {/* Header row */}
       <div className="flex items-start justify-between gap-1">
         <span className="font-bold text-[11px] tracking-wider uppercase text-ink leading-tight">
-          {skill.name}
+          {displayName}
         </span>
         <RarityBadge rarity={skill.rarity} />
       </div>
@@ -37,14 +45,17 @@ export default function SkillCard({ skillId }: SkillCardProps) {
         Lv {level}
       </div>
 
-      {/* Progress bar */}
+      {/* Progress bar — branch-colored fill */}
       {isMaxed ? (
         <div className="label text-red text-[11px]">MAX</div>
       ) : (
         <div className="h-[2px] w-full bg-line">
           <div
-            className="h-full bg-neon transition-all duration-500"
-            style={{ width: `${progress.pct * 100}%` }}
+            className="h-full transition-all duration-500"
+            style={{
+              width:           `${progress.pct * 100}%`,
+              backgroundColor: branch.color,
+            }}
           />
         </div>
       )}

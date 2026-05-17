@@ -1,6 +1,11 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { SKILLS, CAPITAL_PER_LEVEL, getSkill } from '../lib/skills'
+import {
+  SYSTEM_SKILLS,
+  CAPITAL_PER_LEVEL,
+  getSkillDef,
+} from '../lib/skills'
+import type { SkillDef } from '../lib/skills'
 import {
   computeLevel,
   computeMomentum,
@@ -13,123 +18,129 @@ import {
 export type EgoArchetype = 'genius' | 'talented-learner'
 
 export interface Profile {
-  username: string
-  egoStatement: string
-  egoType: { x: number; y: number } | null
-  egoArchetype: EgoArchetype | null
-  egoTestCompletedAt: number | null       // epoch ms; null = never tested
-  egoTestUnlockedManualEdit: boolean      // true after 14 days post-test
-  avatarDataUrl: string | null            // base64 JPEG data URL, client-compressed
-  irlGoals: string[]
+  username:                  string
+  egoStatement:              string
+  egoType:                   { x: number; y: number } | null
+  egoArchetype:              EgoArchetype | null
+  egoTestCompletedAt:        number | null       // epoch ms; null = never tested
+  egoTestUnlockedManualEdit: boolean             // true after 14 days post-test
+  avatarDataUrl:             string | null       // base64 JPEG data URL, client-compressed
+  irlGoals:                  string[]
 }
 
 export interface ActionLogEntry {
-  id: string
-  ts: number
+  id:      string
+  ts:      number
   skillId: string
-  points: number
-  label: string
+  points:  number
+  label:   string
 }
 
 export interface PlanningGoal {
-  id: string
-  date: string // YYYY-MM-DD (in Europe/Sofia local time)
-  text: string
+  id:     string
+  date:   string   // YYYY-MM-DD (Europe/Sofia local time)
+  text:   string
   status: 'pending' | 'done' | 'failed'
 }
 
 export interface EvolutionEntry {
-  id: string
-  ts: number
+  id:      string
+  ts:      number
   trigger: 'focus-fail' | 'extreme-resistance' | 'manual'
-  answer: string
+  answer:  string
 }
 
 export interface CustomReward {
-  id: string
+  id:   string
   name: string
   cost: number
 }
 
 export interface OwnedReward {
   rewardId: string
-  ts: number
+  ts:       number
 }
 
 export interface LevelUpEvent {
-  skillId: string
-  newLevel: number
+  skillId:       string
+  newLevel:      number
   capitalAwarded: number
-  ts: number
+  ts:            number
 }
 
 export interface FocusSession {
-  skillId: string
+  skillId:    string
   durationSec: number
-  startedAt: number
-  status: 'running' | 'completed' | 'failed'
-  failedAt: number | null
+  startedAt:  number
+  status:     'running' | 'completed' | 'failed'
+  failedAt:   number | null
 }
 
 // ─── State + Actions ──────────────────────────────────────────────────────────
 
 interface EgolockState {
   // ── Persisted ────────────────────────────────────────────────────────────
-  profile: Profile
-  skillPoints: Record<string, number>
-  capital: number
-  actionLog: ActionLogEntry[]
-  planning: PlanningGoal[]
+  profile:          Profile
+  skillPoints:      Record<string, number>
+  capital:          number
+  actionLog:        ActionLogEntry[]
+  planning:         PlanningGoal[]
   evolutionArchive: EvolutionEntry[]
-  customRewards: CustomReward[]
-  ownedRewards: OwnedReward[]
-  momentum: MomentumState
-  lastSeenDate: string
-  focusSession: FocusSession | null
+  customRewards:    CustomReward[]
+  ownedRewards:     OwnedReward[]
+  momentum:         MomentumState
+  lastSeenDate:     string
+  focusSession:     FocusSession | null
+
+  // ── V2 persisted ─────────────────────────────────────────────────────────
+  isPremium:         boolean
+  customSkills:      SkillDef[]
+  sportSkillName:    string    // display name only; skill ID stays 'sport'
+  sportNamePrompted: boolean   // true once the naming dialog has been shown
 
   // ── In-memory only (excluded from localStorage via partialize) ────────
   lastLevelUp: LevelUpEvent | null
 
   // ── Actions ───────────────────────────────────────────────────────────
-  logAction: (skillId: string, points: number, label: string) => void
-  clearLastLevelUp: () => void
-  startFocusSession: (skillId: string, durationSec: number) => boolean
-  failFocusSession: () => void
+  logAction:          (skillId: string, points: number, label: string) => void
+  clearLastLevelUp:   () => void
+  startFocusSession:  (skillId: string, durationSec: number) => boolean
+  failFocusSession:   () => void
   completeFocusSession: () => void
-  clearFocusSession: () => void
-  addCustomReward: (name: string, cost: number) => void
+  clearFocusSession:  () => void
+  addCustomReward:    (name: string, cost: number) => void
   removeCustomReward: (id: string) => void
-  purchaseReward: (rewardId: string) => boolean
-  addPlannedGoal: (text: string, dateISO: string) => void
-  markGoalStatus: (id: string, status: PlanningGoal['status']) => void
-  deleteGoal: (id: string) => void
-  addEvolutionEntry: (trigger: EvolutionEntry['trigger'], answer: string) => void
+  purchaseReward:     (rewardId: string) => boolean
+  addPlannedGoal:     (text: string, dateISO: string) => void
+  markGoalStatus:     (id: string, status: PlanningGoal['status']) => void
+  deleteGoal:         (id: string) => void
+  addEvolutionEntry:  (trigger: EvolutionEntry['trigger'], answer: string) => void
   removeEvolutionEntry: (id: string) => void
-  updateProfile: (partial: Partial<Profile>) => void
-  recomputeMomentum: (now?: Date) => void
-  rolloverIfNewDay: () => void
+  updateProfile:      (partial: Partial<Profile>) => void
+  recomputeMomentum:  (now?: Date) => void
+  rolloverIfNewDay:   () => void
   // ── Ego test actions ──────────────────────────────────────────────────────
-  completeEgoTest: (params: { x: number; y: number; archetype: EgoArchetype }) => void
-  setEgoPosition: (x: number, y: number) => void
+  completeEgoTest:    (params: { x: number; y: number; archetype: EgoArchetype }) => void
+  setEgoPosition:     (x: number, y: number) => void
   checkEgoEditUnlock: () => void
-  resetEgoTest: () => void
+  resetEgoTest:       () => void
   // ── Avatar actions ────────────────────────────────────────────────────────
-  setAvatar: (dataUrl: string) => void
-  clearAvatar: () => void
+  setAvatar:          (dataUrl: string) => void
+  clearAvatar:        () => void
+  // ── V2 actions ────────────────────────────────────────────────────────────
+  setPremium:         (value: boolean) => void
+  addCustomSkill:     (def: SkillDef) => boolean   // false if already at 5-skill cap
+  removeCustomSkill:  (id: string) => void
+  setSportSkillName:  (name: string) => void
+  markSportNamePrompted: () => void
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/** UTC date string — used for action-log bucketing and rollover detection. */
 function toDateStr(date: Date): string {
   return date.toISOString().slice(0, 10)
 }
 
-/**
- * Today's date in Europe/Sofia local time (YYYY-MM-DD).
- * Used for failure-tax comparisons on planning goals, which are
- * date-stamped in Sofia time by the UI.
- */
 function sofiaToday(): string {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Sofia' })
 }
@@ -139,7 +150,7 @@ function uid(): string {
 }
 
 function initSkillPoints(): Record<string, number> {
-  return Object.fromEntries(SKILLS.map(s => [s.id, 0]))
+  return Object.fromEntries(SYSTEM_SKILLS.map(s => [s.id, 0]))
 }
 
 // ─── Store ────────────────────────────────────────────────────────────────────
@@ -149,38 +160,45 @@ export const useEgolockStore = create<EgolockState>()(
     (set, get) => ({
       // ── Initial persisted state ────────────────────────────────────────────
       profile: {
-        username: '',
-        egoStatement: '',
-        egoType: null,
-        egoArchetype: null,
-        egoTestCompletedAt: null,
+        username:                  '',
+        egoStatement:              '',
+        egoType:                   null,
+        egoArchetype:              null,
+        egoTestCompletedAt:        null,
         egoTestUnlockedManualEdit: false,
-        avatarDataUrl: null,
-        irlGoals: [],
+        avatarDataUrl:             null,
+        irlGoals:                  [],
       },
-      skillPoints: initSkillPoints(),
-      capital: 0,
-      actionLog: [],
-      planning: [],
+      skillPoints:      initSkillPoints(),
+      capital:          0,
+      actionLog:        [],
+      planning:         [],
       evolutionArchive: [],
-      customRewards: [],
-      ownedRewards: [],
-      momentum: 'consistent',
-      lastSeenDate: toDateStr(new Date()),
-      focusSession: null,
+      customRewards:    [],
+      ownedRewards:     [],
+      momentum:         'consistent',
+      lastSeenDate:     toDateStr(new Date()),
+      focusSession:     null,
+
+      // ── V2 initial state ──────────────────────────────────────────────────
+      isPremium:         false,
+      customSkills:      [],
+      sportSkillName:    'Combat Sport',
+      sportNamePrompted: false,
 
       // ── Initial in-memory state ────────────────────────────────────────────
       lastLevelUp: null,
 
       // ── logAction ──────────────────────────────────────────────────────────
       logAction(skillId, points, label) {
-        const skill = getSkill(skillId)
+        const state = get()
+        const skill = getSkillDef(skillId, state.customSkills)
         if (!skill) return
 
-        const prev      = get().skillPoints[skillId] ?? 0
-        const prevLevel = computeLevel(skill.rarity, prev)
-        const newPts    = prev + points
-        const newLevel  = computeLevel(skill.rarity, newPts)
+        const prev           = state.skillPoints[skillId] ?? 0
+        const prevLevel      = computeLevel(skill.rarity, prev)
+        const newPts         = prev + points
+        const newLevel       = computeLevel(skill.rarity, newPts)
         const levelsGained   = newLevel - prevLevel
         const capitalAwarded = levelsGained > 0
           ? levelsGained * CAPITAL_PER_LEVEL[skill.rarity]
@@ -190,10 +208,10 @@ export const useEgolockStore = create<EgolockState>()(
           id: uid(), ts: Date.now(), skillId, points, label,
         }
 
-        set(state => ({
-          actionLog:   [entry, ...state.actionLog],
-          skillPoints: { ...state.skillPoints, [skillId]: newPts },
-          capital:     state.capital + capitalAwarded,
+        set(s => ({
+          actionLog:   [entry, ...s.actionLog],
+          skillPoints: { ...s.skillPoints, [skillId]: newPts },
+          capital:     s.capital + capitalAwarded,
           ...(levelsGained > 0
             ? { lastLevelUp: { skillId, newLevel, capitalAwarded, ts: Date.now() } }
             : {}),
@@ -265,10 +283,9 @@ export const useEgolockStore = create<EgolockState>()(
       },
 
       markGoalStatus(id, status) {
-        // Prevent double-charging: only tax if the goal wasn't already failed
-        const current      = get().planning.find(g => g.id === id)
+        const current       = get().planning.find(g => g.id === id)
         const alreadyFailed = current?.status === 'failed'
-        const chargeTax    = status === 'failed' && !alreadyFailed
+        const chargeTax     = status === 'failed' && !alreadyFailed
         set(state => ({
           planning: state.planning.map(g => g.id === id ? { ...g, status } : g),
           capital:  Math.max(0, state.capital - (chargeTax ? 10 : 0)),
@@ -276,10 +293,9 @@ export const useEgolockStore = create<EgolockState>()(
       },
 
       deleteGoal(id) {
-        const state    = get()
-        const found    = state.planning.find(g => g.id === id)
-        const today    = sofiaToday()
-        // Failure Tax: only pending goals whose date is strictly in the past
+        const state     = get()
+        const found     = state.planning.find(g => g.id === id)
+        const today     = sofiaToday()
         const isOverdue = found?.status === 'pending' && !!found.date && found.date < today
         set(s => ({
           planning: s.planning.filter(g => g.id !== id),
@@ -321,15 +337,11 @@ export const useEgolockStore = create<EgolockState>()(
         set({ momentum })
       },
 
-      // ── Rollover (NO auto-fail — user resolves past-due goals themselves) ──
+      // ── Rollover ───────────────────────────────────────────────────────────
       rolloverIfNewDay() {
         const state = get()
         const today = toDateStr(new Date())
         if (state.lastSeenDate === today) return
-        // Only update lastSeenDate and recompute momentum.
-        // Past-due pending goals are shown in the Plan screen's PAST DUE panel —
-        // the user must explicitly mark them done / failed / delete.
-        // The failure tax fires at that point, not here.
         set({ lastSeenDate: today })
         get().recomputeMomentum()
         get().checkEgoEditUnlock()
@@ -340,16 +352,15 @@ export const useEgolockStore = create<EgolockState>()(
         set(state => ({
           profile: {
             ...state.profile,
-            egoType: { x, y },
-            egoArchetype: archetype,
-            egoTestCompletedAt: Date.now(),
+            egoType:                   { x, y },
+            egoArchetype:              archetype,
+            egoTestCompletedAt:        Date.now(),
             egoTestUnlockedManualEdit: false,
           },
         }))
       },
 
       setEgoPosition(x, y) {
-        // Silently no-ops while the 14-day lock is active
         if (!get().profile.egoTestUnlockedManualEdit) return
         set(state => ({
           profile: { ...state.profile, egoType: { x, y } },
@@ -371,9 +382,9 @@ export const useEgolockStore = create<EgolockState>()(
         set(state => ({
           profile: {
             ...state.profile,
-            egoType: null,
-            egoArchetype: null,
-            egoTestCompletedAt: null,
+            egoType:                   null,
+            egoArchetype:              null,
+            egoTestCompletedAt:        null,
             egoTestUnlockedManualEdit: false,
           },
         }))
@@ -387,10 +398,34 @@ export const useEgolockStore = create<EgolockState>()(
       clearAvatar() {
         set(state => ({ profile: { ...state.profile, avatarDataUrl: null } }))
       },
+
+      // ── V2 actions ─────────────────────────────────────────────────────────
+      setPremium(value) {
+        set({ isPremium: value })
+      },
+
+      addCustomSkill(def) {
+        const state = get()
+        if (state.customSkills.length >= 5) return false
+        set(s => ({ customSkills: [...s.customSkills, def] }))
+        return true
+      },
+
+      removeCustomSkill(id) {
+        set(s => ({ customSkills: s.customSkills.filter(d => d.id !== id) }))
+      },
+
+      setSportSkillName(name) {
+        set({ sportSkillName: name })
+      },
+
+      markSportNamePrompted() {
+        set({ sportNamePrompted: true })
+      },
     }),
     {
       name: 'egolock-v1',
-      version: 3,
+      version: 4,
       migrate(persistedState: unknown, version: number) {
         const s = persistedState as Record<string, unknown>
 
@@ -411,20 +446,58 @@ export const useEgolockStore = create<EgolockState>()(
           s.profile = { ...p, avatarDataUrl: p.avatarDataUrl ?? null }
         }
 
+        // v3 → v4: V2 skill tree
+        if (version < 4) {
+          // ── Skill point migrations ──────────────────────────────────────────
+          const sp = ((s.skillPoints ?? {}) as Record<string, number>)
+
+          // conditioning (Rare Health, removed) → 50% goodwill transfer to stamina
+          const condPts = sp['conditioning'] ?? 0
+          if (condPts > 0) {
+            sp['stamina'] = (sp['stamina'] ?? 0) + Math.floor(condPts / 2)
+          }
+          delete sp['conditioning']
+
+          // kickboxing (Epic Combat, removed) → 100% transfer to sport
+          const kbPts = sp['kickboxing'] ?? 0
+          if (kbPts > 0) {
+            sp['sport'] = (sp['sport'] ?? 0) + kbPts
+          }
+          delete sp['kickboxing']
+
+          // Zero-init any new V2 skill IDs not already present
+          for (const id of ['stamina', 'sport', 'nutrition', 'marketing']) {
+            if (!(id in sp)) sp[id] = 0
+          }
+
+          s.skillPoints = sp
+
+          // ── New store fields ────────────────────────────────────────────────
+          s.isPremium         = false
+          s.customSkills      = []
+          s.sportSkillName    = 'Combat Sport'
+          // Existing users: mark prompted so the naming dialog never shows
+          s.sportNamePrompted = true
+        }
+
         return s
       },
       partialize: (state) => ({
-        profile:          state.profile,
-        skillPoints:      state.skillPoints,
-        capital:          state.capital,
-        actionLog:        state.actionLog,
-        planning:         state.planning,
-        evolutionArchive: state.evolutionArchive,
-        customRewards:    state.customRewards,
-        ownedRewards:     state.ownedRewards,
-        momentum:         state.momentum,
-        lastSeenDate:     state.lastSeenDate,
-        focusSession:     state.focusSession,
+        profile:           state.profile,
+        skillPoints:       state.skillPoints,
+        capital:           state.capital,
+        actionLog:         state.actionLog,
+        planning:          state.planning,
+        evolutionArchive:  state.evolutionArchive,
+        customRewards:     state.customRewards,
+        ownedRewards:      state.ownedRewards,
+        momentum:          state.momentum,
+        lastSeenDate:      state.lastSeenDate,
+        focusSession:      state.focusSession,
+        isPremium:         state.isPremium,
+        customSkills:      state.customSkills,
+        sportSkillName:    state.sportSkillName,
+        sportNamePrompted: state.sportNamePrompted,
       }),
     },
   ),
@@ -433,7 +506,7 @@ export const useEgolockStore = create<EgolockState>()(
 // ─── Selectors ────────────────────────────────────────────────────────────────
 
 export function selectEgoistScore(state: EgolockState): number {
-  return finalEgoistScore(state.skillPoints, state.momentum)
+  return finalEgoistScore(state.skillPoints, state.momentum, state.customSkills)
 }
 
 export function selectUniqueSkillsToday(state: EgolockState): number {
@@ -446,7 +519,7 @@ export function selectUniqueSkillsToday(state: EgolockState): number {
 }
 
 export function selectLevel(state: EgolockState, skillId: string): number {
-  const skill = getSkill(skillId)
+  const skill = getSkillDef(skillId, state.customSkills)
   if (!skill) return 0
   return computeLevel(skill.rarity, state.skillPoints[skillId] ?? 0)
 }

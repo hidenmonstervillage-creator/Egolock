@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useEgolockStore } from '../store/useEgolockStore'
-import { getSkill } from '../lib/skills'
+import { getSkillDef } from '../lib/skills'
 
 interface DisplayData {
   skillId: string
@@ -34,7 +34,7 @@ export default function LevelUpToast() {
 
   if (!displayed) return null
 
-  const skill = getSkill(displayed.skillId)
+  const skill = getSkillDef(displayed.skillId)
 
   return (
     <div

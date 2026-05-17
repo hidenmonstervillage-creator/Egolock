@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useEgolockStore } from '../store/useEgolockStore'
-import { SKILLS, getSkill } from '../lib/skills'
+import { BRANCHES, SYSTEM_SKILLS, getSkillDef, getAllSkillDefs } from '../lib/skills'
 import { PRESETS } from '../lib/presets'
 import Panel from '../components/ui/Panel'
 import Button from '../components/ui/Button'
@@ -8,23 +8,36 @@ import RarityBadge from '../components/ui/RarityBadge'
 import EvolutionPrompt from '../components/EvolutionPrompt'
 import type { EvolutionEntry } from '../store/useEgolockStore'
 
-// ─── Group presets by skillId (preserves order of first appearance) ───────────
+// ─── Build branch → skill → presets structure (static, based on PRESETS order) ─
 
-const PRESET_GROUPS: Array<{ skillId: string; presets: typeof PRESETS }> = []
-const _seen = new Set<string>()
-for (const p of PRESETS) {
-  if (!_seen.has(p.skillId)) {
-    _seen.add(p.skillId)
-    PRESET_GROUPS.push({ skillId: p.skillId, presets: [] })
+interface SkillGroup  { skillId: string; presets: typeof PRESETS }
+interface BranchGroup { branchId: string; skills:  SkillGroup[] }
+
+const BRANCH_GROUPS: BranchGroup[] = BRANCHES.flatMap(branch => {
+  // Skills in this branch that have at least one preset, in preset-first-appearance order
+  const seen   = new Set<string>()
+  const skills: SkillGroup[] = []
+
+  for (const p of PRESETS) {
+    const def = SYSTEM_SKILLS.find(s => s.id === p.skillId)
+    if (!def || def.branchId !== branch.id) continue
+    if (!seen.has(p.skillId)) {
+      seen.add(p.skillId)
+      skills.push({ skillId: p.skillId, presets: [] })
+    }
+    skills.find(g => g.skillId === p.skillId)!.presets.push(p)
   }
-  PRESET_GROUPS.find(g => g.skillId === p.skillId)!.presets.push(p)
-}
+
+  return skills.length > 0 ? [{ branchId: branch.id, skills }] : []
+})
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function LoggerScreen() {
-  const logAction = useEgolockStore(s => s.logAction)
-  const actionLog = useEgolockStore(s => s.actionLog)
+  const logAction      = useEgolockStore(s => s.logAction)
+  const actionLog      = useEgolockStore(s => s.actionLog)
+  const customSkills   = useEgolockStore(s => s.customSkills)
+  const sportSkillName = useEgolockStore(s => s.sportSkillName)
 
   // Preset button flash feedback
   const [flashKey, setFlashKey] = useState<string | null>(null)
@@ -33,8 +46,8 @@ export default function LoggerScreen() {
   const [evoOpen,    setEvoOpen]    = useState(false)
   const [evoTrigger, setEvoTrigger] = useState<EvolutionEntry['trigger']>('extreme-resistance')
 
-  // Custom log form
-  const [customSkill,  setCustomSkill]  = useState(SKILLS[0].id)
+  // Custom log form — default to first system skill
+  const [customSkill,  setCustomSkill]  = useState(SYSTEM_SKILLS[0].id)
   const [customPoints, setCustomPoints] = useState('')
   const [customLabel,  setCustomLabel]  = useState('')
 
@@ -60,55 +73,80 @@ export default function LoggerScreen() {
     setCustomLabel('')
   }
 
-  const recent = actionLog.slice(0, 10)
+  const recent    = actionLog.slice(0, 10)
+  const allSkills = getAllSkillDefs(customSkills)
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4 max-w-2xl">
 
-      {/* ── A: Presets ──────────────────────────────────────────────────────── */}
+      {/* ── A: Presets — grouped by branch then by skill ─────────────────── */}
       <Panel title="PRESETS">
-        <div className="flex flex-col gap-5">
-          {PRESET_GROUPS.map(({ skillId, presets }) => {
-            const skill = getSkill(skillId)
-            if (!skill) return null
+        <div className="flex flex-col gap-6">
+          {BRANCH_GROUPS.map(({ branchId, skills }) => {
+            const branch = BRANCHES.find(b => b.id === branchId)!
             return (
-              <div key={skillId}>
-                {/* Skill group header */}
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-ink text-xs font-bold uppercase tracking-wider">
-                    {skill.name}
+              <div key={branchId} className="flex flex-col gap-4">
+
+                {/* Branch header */}
+                <div
+                  className="border-b pb-1"
+                  style={{ borderColor: branch.color }}
+                >
+                  <span
+                    className="label text-[10px] font-bold tracking-widest"
+                    style={{ color: branch.color }}
+                  >
+                    {branch.name}
                   </span>
-                  <RarityBadge rarity={skill.rarity} />
                 </div>
 
-                {/* Preset buttons */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {presets.map(p => {
-                    const key = `${skillId}-${p.label}`
-                    const flashing = flashKey === key
-                    return (
-                      <button
-                        key={p.label}
-                        onClick={() => handlePreset(p.skillId, p.points, p.label)}
-                        className={[
-                          'border p-2.5 text-left font-mono transition-all duration-200',
-                          flashing
-                            ? 'border-neon bg-neon/10'
-                            : 'border-line bg-bg hover:border-neon hover:bg-neon/5',
-                        ].join(' ')}
-                      >
-                        <div className="text-ink text-xs uppercase tracking-wider leading-tight">
-                          {p.label}
-                        </div>
-                        <div className="text-neon text-xs mt-0.5 tabular-nums">
-                          +{p.points}
-                        </div>
-                      </button>
-                    )
-                  })}
-                </div>
+                {skills.map(({ skillId, presets }) => {
+                  const skill = getSkillDef(skillId, customSkills)
+                  if (!skill) return null
+                  // Use custom sport name if applicable
+                  const displayName = skill.isCustomNameable ? sportSkillName : skill.name
+
+                  return (
+                    <div key={skillId}>
+                      {/* Skill group header */}
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-ink text-xs font-bold uppercase tracking-wider">
+                          {displayName}
+                        </span>
+                        <RarityBadge rarity={skill.rarity} />
+                      </div>
+
+                      {/* Preset buttons */}
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                        {presets.map(p => {
+                          const key      = `${skillId}-${p.label}`
+                          const flashing = flashKey === key
+                          return (
+                            <button
+                              key={p.label}
+                              onClick={() => handlePreset(p.skillId, p.points, p.label)}
+                              className={[
+                                'border p-2.5 text-left font-mono transition-all duration-200',
+                                flashing
+                                  ? 'border-neon bg-neon/10'
+                                  : 'border-line bg-bg hover:border-neon hover:bg-neon/5',
+                              ].join(' ')}
+                            >
+                              <div className="text-ink text-xs uppercase tracking-wider leading-tight">
+                                {p.label}
+                              </div>
+                              <div className="text-neon text-xs mt-0.5 tabular-nums">
+                                +{p.points}
+                              </div>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
             )
           })}
@@ -118,16 +156,28 @@ export default function LoggerScreen() {
       {/* ── B: Custom log ───────────────────────────────────────────────────── */}
       <Panel title="CUSTOM LOG">
         <div className="flex flex-col gap-3">
+          {/* Grouped <select> by branch */}
           <select
             value={customSkill}
             onChange={e => setCustomSkill(e.target.value)}
             className="bg-bg border border-line text-ink font-mono text-xs px-3 py-2 focus:border-neon outline-none w-full"
           >
-            {SKILLS.map(s => (
-              <option key={s.id} value={s.id}>
-                {s.name} ({s.rarity})
-              </option>
-            ))}
+            {BRANCHES.map(branch => {
+              const branchSkills = allSkills.filter(s => s.branchId === branch.id)
+              if (branchSkills.length === 0) return null
+              return (
+                <optgroup key={branch.id} label={branch.name}>
+                  {branchSkills.map(s => {
+                    const displayName = s.isCustomNameable ? sportSkillName : s.name
+                    return (
+                      <option key={s.id} value={s.id}>
+                        {displayName} ({s.rarity})
+                      </option>
+                    )
+                  })}
+                </optgroup>
+              )
+            })}
           </select>
 
           <div className="flex gap-2">
@@ -174,9 +224,10 @@ export default function LoggerScreen() {
         ) : (
           <div className="flex flex-col">
             {recent.map(entry => {
-              const skill = getSkill(entry.skillId)
-              const d = new Date(entry.ts)
-              const hhmm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+              const skill       = getSkillDef(entry.skillId, customSkills)
+              const displayName = skill?.isCustomNameable ? sportSkillName : (skill?.name ?? entry.skillId)
+              const d           = new Date(entry.ts)
+              const hhmm        = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
               return (
                 <div
                   key={entry.id}
@@ -184,7 +235,7 @@ export default function LoggerScreen() {
                 >
                   <span className="text-dim tabular-nums shrink-0 w-10">{hhmm}</span>
                   <span className="text-dim uppercase tracking-wider shrink-0 w-[84px] truncate">
-                    {skill?.name ?? entry.skillId}
+                    {displayName}
                   </span>
                   <span className="text-ink flex-1 truncate">{entry.label}</span>
                   <span className="text-neon tabular-nums shrink-0">+{entry.points}</span>

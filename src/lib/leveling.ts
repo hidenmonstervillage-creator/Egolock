@@ -1,5 +1,5 @@
-import { SKILLS, THRESHOLDS, RARITY_MULTIPLIER, MAX_LEVEL } from './skills'
-import type { Rarity } from './skills'
+import { getAllSkillDefs, THRESHOLDS, RARITY_MULTIPLIER, MAX_LEVEL } from './skills'
+import type { Rarity, SkillDef } from './skills'
 
 export type MomentumState = 'relentless' | 'consistent' | 'stagnant' | 'elimination'
 
@@ -25,17 +25,24 @@ export function pointsToNextLevel(
     return { current, next: null, remaining: 0, pct: 1 }
   }
 
-  const current = level > 0 ? thresholds[level - 1] : 0
-  const next = thresholds[level]
-  const span = next - current
+  const current  = level > 0 ? thresholds[level - 1] : 0
+  const next     = thresholds[level]
+  const span     = next - current
   const progress = points - current
-  const pct = span > 0 ? Math.min(progress / span, 1) : 0
+  const pct      = span > 0 ? Math.min(progress / span, 1) : 0
 
   return { current, next, remaining: next - points, pct }
 }
 
-export function computeEgoistScore(skillPoints: Record<string, number>): number {
-  return SKILLS.reduce((sum, skill) => {
+/**
+ * Raw Egoist Score (before momentum multiplier).
+ * Includes custom skill defs so Pro-user skills contribute to Eₑ.
+ */
+export function computeEgoistScore(
+  skillPoints: Record<string, number>,
+  customDefs?: SkillDef[],
+): number {
+  return getAllSkillDefs(customDefs).reduce((sum, skill) => {
     const pts = skillPoints[skill.id] ?? 0
     return sum + pts * RARITY_MULTIPLIER[skill.rarity]
   }, 0)
@@ -55,9 +62,9 @@ function toDateStr(date: Date): string {
 }
 
 export function computeMomentum(args: {
-  lastLogDates: string[]
+  lastLogDates:      string[]
   uniqueSkillsToday: number
-  now: Date
+  now:               Date
 }): MomentumState {
   const { lastLogDates, uniqueSkillsToday, now } = args
 
@@ -81,12 +88,11 @@ export function computeMomentum(args: {
     check.setDate(check.getDate() - 1)
   }
 
-  // If we've gone back 3 full days without finding a log entry
   if (missedDays >= 3) return 'elimination'
 
   // Check if last log was within 24h
   const mostRecent = lastLogDates[0] // sorted desc
-  const yesterday = new Date(now)
+  const yesterday  = new Date(now)
   yesterday.setDate(yesterday.getDate() - 1)
   const yesterdayStr = toDateStr(yesterday)
 
@@ -96,8 +102,9 @@ export function computeMomentum(args: {
 }
 
 export function finalEgoistScore(
-  skillPoints: Record<string, number>,
+  skillPoints:   Record<string, number>,
   momentumState: MomentumState,
+  customDefs?:   SkillDef[],
 ): number {
-  return computeEgoistScore(skillPoints) * momentumMultiplier(momentumState)
+  return computeEgoistScore(skillPoints, customDefs) * momentumMultiplier(momentumState)
 }
